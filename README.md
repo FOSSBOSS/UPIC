@@ -22,8 +22,6 @@ sudo apt install python3-venv libusb-1.0-0
 ## run:
 ```
 $ ./bridge.py 
-/home/l/.local/lib/python3.12/site-packages/pyvisa/resources/messagebased.py:702: UserWarning: read string doesn't end with termination characters
-  return self.read()
 UNI-T Technologies,UTG900E,AWG1225220117,3.06
 Open http://127.0.0.1:8765 in your browser. Ctrl-C to quit.
 
