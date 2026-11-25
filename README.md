@@ -1,7 +1,7 @@
 The Bash upic was pretty hacked. Now I have a dual chanel UNI-T UTG932E function generator.
 Programed with pyvisa. 
 https://pyvisa.readthedocs.io/en/latest/  
-https://www.iannis-xenakis.org/  
+https://www.centre-iannis-xenakis.org/cix_upic_presentation?lang=en  
 
 ## setup udev
 ```cmd
@@ -10,7 +10,7 @@ https://www.iannis-xenakis.org/
 ```
 ## get libraries
 ```py
-python -m pip install pyvisa pyvisa-py pyusb
+python -m pip install pyvisa pyvisa-py pyusb zeroconf
 ```
 
 
@@ -18,4 +18,43 @@ python -m pip install pyvisa pyvisa-py pyusb
 ```
 sudo apt install python3-venv libusb-1.0-0
 ```
+
+## run:
+```
+$ ./bridge.py 
+/home/l/.local/lib/python3.12/site-packages/pyvisa/resources/messagebased.py:702: UserWarning: read string doesn't end with termination characters
+  return self.read()
+UNI-T Technologies,UTG900E,AWG1225220117,3.06
+Open http://127.0.0.1:8765 in your browser. Ctrl-C to quit.
+
+```
+The warning is from pyvisa, and I havent found the fix yet
+
+
+## Notes: 
+Swtiching OFF, produces clicks on the chanels so we avoid that except for turning the 
+Function Generator off with  stop button. 
+
+Else, we set the output low, to 0.1 hz to be inaudable, but not trigger the chanel relays.
+
+## Todo:
+- low drop out pulsing on transient beats. 
+- gracefull exit.
+- gracefull disconnect
+- fix the serWarning: read string doesn't end with termination characters in pyvisa
+
+## visa bug hunt:
+^Cl@cker:~/UPICpython3 -W error::UserWarning ./bridge.py 
+Traceback (most recent call last):
+  File "/home/l/UPIC/./bridge.py", line 240, in <module>
+    main()
+  File "/home/l/UPIC/./bridge.py", line 220, in main
+    identity = device.query("*IDN?").strip()
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/l/.local/lib/python3.12/site-packages/pyvisa/resources/messagebased.py", line 702, in query
+    return self.read()
+           ^^^^^^^^^^^
+  File "/home/l/.local/lib/python3.12/site-packages/pyvisa/resources/messagebased.py", line 530, in read
+    warnings.warn(
+UserWarning: read string doesn't end with termination characters
 
