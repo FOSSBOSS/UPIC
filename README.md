@@ -41,20 +41,8 @@ Else, we set the output low, to 0.1 hz to be inaudable, but not trigger the chan
 - low drop out pulsing on transient beats. 
 - gracefull exit.
 - gracefull disconnect
-- fix the serWarning: read string doesn't end with termination characters in pyvisa
 
-## visa bug hunt:
-^Cl@cker:~/UPICpython3 -W error::UserWarning ./bridge.py 
-Traceback (most recent call last):
-  File "/home/l/UPIC/./bridge.py", line 240, in <module>
-    main()
-  File "/home/l/UPIC/./bridge.py", line 220, in main
-    identity = device.query("*IDN?").strip()
-               ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/l/.local/lib/python3.12/site-packages/pyvisa/resources/messagebased.py", line 702, in query
-    return self.read()
-           ^^^^^^^^^^^
-  File "/home/l/.local/lib/python3.12/site-packages/pyvisa/resources/messagebased.py", line 530, in read
-    warnings.warn(
-UserWarning: read string doesn't end with termination characters
+## video
+<a href="https://www.youtube.com/watch?v=3b8PJqtfe9s"> web interface</a>
 
+<img src="img/scketch.png">
