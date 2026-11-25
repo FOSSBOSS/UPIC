@@ -28,7 +28,6 @@ UNI-T Technologies,UTG900E,AWG1225220117,3.06
 Open http://127.0.0.1:8765 in your browser. Ctrl-C to quit.
 
 ```
-The warning is from pyvisa, and I havent found the fix yet
 
 
 ## Notes: 
