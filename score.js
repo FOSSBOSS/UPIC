@@ -9,6 +9,7 @@ const brushes = [
 ];
 let active=0, strokes=[], drawing=null, pointer=null, seconds=8, audio, source, origin=0;
 let w,h, ratio;
+let cursor=[0,.5], heldArrow=null, keyStroke=null;
 const left=52, topY=13, right=15, bottom=30;
 const freq=y=>1760*Math.pow(2,-4*y);
 const clamp=n=>Math.max(0,Math.min(1,n));
@@ -43,9 +44,15 @@ function render(){
     if(s.points.length===1){const [x,y]=s.points[0];pen.lineTo(left+dx*x+.1,topY+dy*y)}
     pen.stroke();
   }
+  if(document.activeElement===canvas){
+    const x=left+dx*cursor[0], y=topY+dy*cursor[1];
+    pen.strokeStyle='#d3f58b';pen.lineWidth=2;pen.beginPath();pen.arc(x,y,6,0,Math.PI*2);pen.stroke();
+    pen.textAlign=x>w-95?'right':'left';pen.fillStyle='#d3f58b';
+    pen.fillText(Number(freq(cursor[1]).toFixed(1))+' Hz',x+(x>w-95?-10:10),Math.max(15,y-8));
+  }
   const p=phase();if(source||hardware.token)line(left+p*dx,topY,left+p*dx,h-bottom,'#dcff94',2);
   $('clock').textContent=(p*seconds).toFixed(1)+' / '+seconds+' s';
-  $('hint').hidden=strokes.length>0;
+  $('hint').hidden=strokes.length>0||document.activeElement===canvas;
   $('undo').disabled=$('clear').disabled=!strokes.length;
 }
 new ResizeObserver(()=>{
@@ -55,11 +62,40 @@ new ResizeObserver(()=>{
 function point(e){const r=canvas.getBoundingClientRect();return [clamp((e.clientX-r.left-left)/(w-left-right)),clamp((e.clientY-r.top-topY)/(h-topY-bottom))]}
 canvas.onpointerdown=e=>{
   if(pointer!==null||e.button!==0)return;
-  pointer=e.pointerId;canvas.setPointerCapture(pointer);drawing={ink:active,points:[point(e)]};strokes.push(drawing);render();
+  finishArrow();canvas.focus();cursor=point(e);
+  pointer=e.pointerId;canvas.setPointerCapture(pointer);drawing={ink:active,points:[cursor]};strokes.push(drawing);render();
 };
-canvas.onpointermove=e=>{if(e.pointerId===pointer){drawing.points.push(point(e));render()}};
+canvas.onpointermove=e=>{if(e.pointerId===pointer){cursor=point(e);drawing.points.push(cursor);render()}};
 function finish(e){if(pointer!==e.pointerId)return;drawing=null;pointer=null;updateSound();render()}
 canvas.onpointerup=canvas.onpointercancel=canvas.onlostpointercapture=finish;
+function finishArrow(){
+  if(keyStroke)updateSound();
+  heldArrow=null;keyStroke=null;
+}
+canvas.onfocus=render;
+canvas.onblur=()=>{finishArrow();render()};
+window.addEventListener('blur',finishArrow);
+canvas.onkeydown=e=>{
+  if(pointer!==null||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;
+  if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))return;
+  e.preventDefault();
+  const [x,y]=cursor;
+  if(e.key==='ArrowUp'||e.key==='ArrowDown'){
+    finishArrow();
+    cursor=[x,clamp(y+(e.key==='ArrowUp'?-1:1)/48)];
+  }else{
+    if(heldArrow!==e.key)finishArrow();
+    const nextX=clamp(x+(e.key==='ArrowRight'?1:-1)/64);
+    if(nextX===x)return;
+    if(!keyStroke){
+      heldArrow=e.key;keyStroke={ink:active,points:[cursor]};strokes.push(keyStroke);
+    }
+    cursor=[nextX,y];
+    keyStroke.points[1]=cursor;
+  }
+  render();
+};
+canvas.onkeyup=e=>{if(e.key===heldArrow)finishArrow()};
 // Render each horizontal pass as one voice, including strokes drawn right to left.
 function makeBuffer(){
   const rate=24000, buf=audio.createBuffer(1,rate*seconds,rate), out=buf.getChannelData(0),tau=2*Math.PI;
@@ -113,5 +149,5 @@ $('duration').oninput=e=>{
   const p=phase();seconds=Number(e.target.value);$('length').value=seconds+' s';
   if(source)start(p);if(hardware.token)hardware.origin=performance.now()-p*seconds*1000;render();
 };
-function edit(clear){pointer=null;drawing=null;if(clear)strokes=[];else strokes.pop();updateSound();render()}
+function edit(clear){finishArrow();pointer=null;drawing=null;if(clear)strokes=[];else strokes.pop();updateSound();render()}
 $('undo').onclick=()=>edit(false);$('clear').onclick=()=>edit(true);
