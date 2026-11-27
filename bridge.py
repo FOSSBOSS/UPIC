@@ -11,6 +11,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pyvisa
+import webbrowser
+from contextlib import ExitStack
 
 ROOT = Path(__file__).resolve().parent
 PORT = 8765
@@ -201,6 +203,16 @@ class Bridge(HTTPServer):
         conn.settimeout(.5)
         return conn, peer
 
+
+def browser_only(reason):
+    print(f"[UPIC] {reason}", flush=True)
+    print("[UPIC] Falling back to Browser Audio.", flush=True)
+
+    url = (ROOT / "index.html").as_uri()
+    print(f"Opening {url}", flush=True)
+
+    if not webbrowser.open(url):
+        print("Open the above URL manually.")
 
 def main():
     parser = argparse.ArgumentParser()

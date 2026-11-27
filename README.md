@@ -16,7 +16,7 @@ python -m pip install pyvisa pyvisa-py pyusb zeroconf
 
 ## linux dependencies:
 ```
-sudo apt install python3-venv libusb-1.0-0
+sudo apt install libusb-1.0-0
 ```
 
 ## run:
@@ -27,6 +27,19 @@ Open http://127.0.0.1:8765 in your browser. Ctrl-C to quit.
 
 ```
 
+## Todo:
+
+- make frq scalable
+- make a waveform editor 
+- make drawing easier.
+- make images saveable / reloadable
+- allow svg upload.
+- make an andriod app
+
+## video
+<a href="https://www.youtube.com/watch?v=3b8PJqtfe9s"> web interface</a>
+
+<img src="img/scketch.png">
 
 ## Notes: 
 Swtiching OFF, produces clicks on the chanels so we avoid that except for turning the 
@@ -34,12 +47,5 @@ Function Generator off with  stop button.
 
 Else, we set the output low, to 0.1 hz to be inaudable, but not trigger the chanel relays.
 
-## Todo:
-- low drop out pulsing on transient beats. 
-- gracefull exit.
-- gracefull disconnect
-
-## video
-<a href="https://www.youtube.com/watch?v=3b8PJqtfe9s"> web interface</a>
-
-<img src="img/scketch.png">
+## Bugs:
+frq drop out on shift seems to be a function of this generator. boo.
