@@ -11,7 +11,7 @@ let active=0, strokes=[], drawing=null, pointer=null, seconds=8, audio, source, 
 let w,h, ratio;
 let cursor=[0,.5], heldArrow=null, keyStroke=null;
 const left=52, topY=13, right=15, bottom=30;
-const freq=y=>1760*Math.pow(2,-4*y);
+const freq=y=>2600*Math.pow(2,-4*y);
 const clamp=n=>Math.max(0,Math.min(1,n));
 function pick(i){
   active=i;

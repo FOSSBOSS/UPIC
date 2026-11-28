@@ -9,10 +9,44 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-
-import pyvisa
 import webbrowser
 from contextlib import ExitStack
+"""
+The goal is to use the browser audio if:
+pyvsia is not installed, or, if the hardware for it is not present. 
+hardware detection may impose additional libraries. 
+
+"""
+def detect_device():
+    VENDOR_ID = 0x6656
+    PRODUCT_ID = 0x0834
+    device = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
+    if device is not None:
+        print("Fn gen detected")
+        return True
+    else:
+        return False
+#detect pyvsia:
+try:
+    import pyvisa
+    visa = True
+except ModuleNotFoundError:
+    visa = False
+    # use browser audio by default
+
+# detect pyusb:
+try:
+    import usb.core
+    usblib_present = True
+    fnGen = detect_device()
+    if fnGen is False:
+        print("Check cables: usb fn gen not detected") 
+except ModuleNotFoundError:
+    usblib_present = False
+    fngen = False
+    print(f"no fn gen detected")
+    # use browser audio       
+    
 
 ROOT = Path(__file__).resolve().parent
 PORT = 8765
@@ -173,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if not (isinstance(note, list) and len(note) == 2 and
                             type(note[0]) is int and 0 <= note[0] <= 3 and
-                            type(note[1]) in (int, float) and (note[1] == REST_HZ or 110 <= note[1] <= 1760)):
+                            type(note[1]) in (int, float) and (note[1] == REST_HZ or 110 <= note[1] <= 2600)):
                         raise ValueError("Invalid voice")
                 server.instrument.frame(notes)
                 server.deadline = time.monotonic() + LEASE
@@ -204,7 +238,7 @@ class Bridge(HTTPServer):
         return conn, peer
 
 
-def browser_only(reason):
+def browser_audio(reason):
     print(f"[UPIC] {reason}", flush=True)
     print("[UPIC] Falling back to Browser Audio.", flush=True)
 
