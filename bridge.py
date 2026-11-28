@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Run in the PyVISA environment that already talks to your UNI-T UTG932E."""
+"""Serve Sketch Score in a browser, with optional UNI-T UTG932E output."""
 import argparse
-from contextlib import closing
+from contextlib import ExitStack
+import importlib
+import importlib.util
 import json
 import math
 import secrets
@@ -9,50 +11,109 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 import webbrowser
-from contextlib import ExitStack
-"""
-The goal is to use the browser audio if:
-pyvsia is not installed, or, if the hardware for it is not present. 
-hardware detection may impose additional libraries. 
-
-"""
-def detect_device():
-    VENDOR_ID = 0x6656
-    PRODUCT_ID = 0x0834
-    device = usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
-    if device is not None:
-        print("Fn gen detected")
-        return True
-    else:
-        return False
-#detect pyvsia:
-try:
-    import pyvisa
-    visa = True
-except ModuleNotFoundError:
-    visa = False
-    # use browser audio by default
-
-# detect pyusb:
-try:
-    import usb.core
-    usblib_present = True
-    fnGen = detect_device()
-    if fnGen is False:
-        print("Check cables: usb fn gen not detected") 
-except ModuleNotFoundError:
-    usblib_present = False
-    fngen = False
-    print(f"no fn gen detected")
-    # use browser audio       
-    
 
 ROOT = Path(__file__).resolve().parent
 PORT = 8765
 ORIGIN = f"http://127.0.0.1:{PORT}"
 LEASE = 1.5
 REST_HZ = 0.01
+VENDOR_ID = 0x6656
+PRODUCT_ID = 0x0834
+
+
+def installed(module):
+    """Check optional packages without making them startup dependencies."""
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError, ModuleNotFoundError):
+        return False
+
+
+def detect_device():
+    """Best-effort USB hint; PyVISA connection is the final authority."""
+    try:
+        import usb.core
+        return usb.core.find(idVendor=VENDOR_ID, idProduct=PRODUCT_ID) is not None
+    except Exception:
+        # Missing PyUSB, missing USB backend, permissions, etc.
+        return None
+
+
+def connect_generator(args, resources):
+    """Try the instrument and report availability; never abort browser startup."""
+    importlib.invalidate_caches()
+    libraries = {
+        "pyvisa": installed("pyvisa"),
+        "pyvisa_py": installed("pyvisa_py"),
+        "pyusb": installed("usb.core"),
+    }
+    usb_found = detect_device() if libraries["pyusb"] else None
+    info = {
+        "browser_audio": True,
+        "function_generator": False,
+        "default_audio": "browser",
+        "libraries": libraries,
+        "usb_detected": usb_found,
+        "identity": None,
+        "reason": None,
+    }
+
+    def unavailable(reason):
+        info["reason"] = reason
+        return None, info
+
+    if not libraries["pyvisa"]:
+        return unavailable("PyVISA not installed (pip install pyvisa).")
+    if args.backend == "@py" and not libraries["pyvisa_py"]:
+        return unavailable("PyVISA-py backend missing (pip install pyvisa-py).")
+    if args.backend == "@py" and not libraries["pyusb"]:
+        return unavailable("PyUSB missing (pip install pyusb).")
+
+    try:
+        import pyvisa
+        manager = pyvisa.ResourceManager(args.backend)
+        resources.callback(manager.close)
+
+        matches = []
+        for resource in manager.list_resources():
+            parts = resource.split("::")
+            if not parts[0].startswith("USB") or len(parts) < 4:
+                continue
+            try:
+                ids = int(parts[1], 0), int(parts[2], 0)
+            except ValueError:
+                continue
+            if ids == (VENDOR_ID, PRODUCT_ID):
+                matches.append(resource)
+
+        if args.resource:
+            resource_name = args.resource
+        elif len(matches) == 1:
+            resource_name = matches[0]
+        elif not matches:
+            return unavailable("UTG900E/UTG932E not detected. Check USB cable and permissions.")
+        else:
+            return unavailable(f"Multiple UNI-T generators found: {matches}. Use --resource.")
+
+        device = manager.open_resource(resource_name)
+        resources.callback(device.close)
+        device.timeout = 1500
+        device.write_termination = "\n"
+        device.read_termination = None  # UTG900E replies without a final newline.
+        identity = device.query("*IDN?").strip()
+        fields = identity.split(",")
+        if len(fields) < 2 or fields[1].strip().upper() not in {"UTG900E", "UTG932E"}:
+            return unavailable("Unexpected instrument identity: " + identity)
+
+        instrument = Instrument(device, args.trace)
+        instrument.off()
+        info.update(function_generator=True, default_audio="hardware", identity=identity)
+        return instrument, info
+    except Exception as exc:
+        # Covers missing USB backend, VISA load errors, permissions, device read errors.
+        return unavailable(f"Function generator not available: {exc}")
 
 
 class Instrument:
@@ -165,13 +226,19 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def do_GET(self):
+        path = urlsplit(self.path).path
+        if path == "/capabilities":
+            self.server.refresh_generator()
+            return self.reply(200, self.server.capabilities)
         files = {"/": ("index.html", "text/html"), "/score.js": ("score.js", "text/javascript"),
                  "/hardware.js": ("hardware.js", "text/javascript")}
-        if self.path in files:
-            name, mime = files[self.path]
-            self.reply(200, (ROOT / name).read_bytes(), mime)
-        else:
-            self.reply(404, {})
+        if path in files:
+            name, mime = files[path]
+            try:
+                return self.reply(200, (ROOT / name).read_bytes(), mime)
+            except FileNotFoundError:
+                return self.reply(404, {"error": f"Missing {name}"})
+        self.reply(404, {})
 
     def do_POST(self):
         server = self.server
@@ -187,6 +254,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/start":
                 if server.owner:
                     return self.reply(409, {"error": "Another tab is playing."})
+                server.refresh_generator()
+                if server.instrument is None:
+                    return self.reply(503, {"error": server.capabilities["reason"] or "Function generator unavailable."})
                 server.instrument.configure()
                 server.owner = secrets.token_urlsafe(24)
                 server.deadline = time.monotonic() + LEASE
@@ -215,7 +285,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(404, {})
             self.reply(200, {})
         except Exception as exc:
-            server.release(f"{self.path} failed: {exc}")
+            server.release(f"{self.path} failed: {exc}", invalidate=True)
             self.reply(400, {"error": str(exc)})
 
 
@@ -223,14 +293,53 @@ class Bridge(HTTPServer):
     owner = None
     deadline = 0
 
-    def release(self, reason):
-        if self.instrument.trace:
-            print(f"Releasing both outputs: {reason}", flush=True)
-        self.owner = None
+    def close_resources(self):
+        # ExitStack attempts every registered close, even if one fails.
         try:
-            self.instrument.off()
+            self.resources.close()
         except Exception as exc:
-            print(exc, file=sys.stderr)
+            print(f"[UPIC] VISA cleanup: {exc}", file=sys.stderr)
+
+    def invalidate_generator(self, reason):
+        self.owner = None
+        self.deadline = 0
+        self.instrument = None
+        self.capabilities.update(
+            function_generator=False, default_audio="browser",
+            identity=None, usb_detected=None, reason=reason)
+        self.close_resources()
+
+    def refresh_generator(self):
+        if self.owner:
+            return
+        if self.instrument is not None:
+            try:
+                identity = self.instrument.device.query("*IDN?").strip()
+                if identity == self.capabilities["identity"]:
+                    return
+            except Exception:
+                pass
+            self.release("instrument disconnected", invalidate=True)
+        self.close_resources()
+        self.instrument, self.capabilities = connect_generator(
+            self.args, self.resources)
+        if self.instrument is None:
+            self.close_resources()
+
+    def release(self, reason, invalidate=False):
+        self.owner = None
+        self.deadline = 0
+        if self.instrument is not None:
+            if self.instrument.trace:
+                print(f"Releasing both outputs: {reason}", flush=True)
+            try:
+                self.instrument.off()
+            except Exception as exc:
+                print(exc, file=sys.stderr)
+                reason = str(exc)
+                invalidate = True
+        if invalidate:
+            self.invalidate_generator(reason)
 
     def get_request(self):
         conn, peer = super().get_request()
@@ -238,49 +347,48 @@ class Bridge(HTTPServer):
         return conn, peer
 
 
-def browser_audio(reason):
-    print(f"[UPIC] {reason}", flush=True)
-    print("[UPIC] Falling back to Browser Audio.", flush=True)
-
-    url = (ROOT / "index.html").as_uri()
-    print(f"Opening {url}", flush=True)
-
-    if not webbrowser.open(url):
-        print("Open the above URL manually.")
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resource", help="Explicit VISA resource")
     parser.add_argument("--backend", default="@py", help="PyVISA backend (default @py)")
     parser.add_argument("--trace", action="store_true", help="Show output state and SCPI at rest boundaries")
     args = parser.parse_args()
-    with closing(pyvisa.ResourceManager(args.backend)) as manager:
-        choices = [r for r in manager.list_resources() if r.startswith("USB") and
-                   len(r.split("::")) >= 4 and
-                   [int(v, 0) for v in r.split("::")[1:3]] == [0x6656, 0x0834]]
-        if not args.resource and len(choices) != 1:
-            sys.exit(f"Expected one UTG900E. Matches: {choices}. Use --resource if needed.")
-        with closing(manager.open_resource(args.resource or choices[0])) as device:
-            device.timeout = 1500
-            device.write_termination = device.read_termination = "\n"
-            device.read_termination = None # pyvisa bug not yet filed
-            identity = device.query("*IDN?").strip()
-            if len(identity.split(",")) < 2 or identity.split(",")[1].strip().upper() not in {"UTG900E","UTG932E"}:
-                sys.exit("Unexpected instrument: " + identity)
-            with Bridge(("127.0.0.1", PORT), Handler) as server:
-                server.instrument = Instrument(device, args.trace)
-                server.timeout = .1
-                print(f"{identity}\nOpen {ORIGIN} in your browser. Ctrl-C to quit.", flush=True)
+
+    # Keep the web UI available whether or not instrument probing succeeds.
+    with ExitStack() as resources:
+        instrument, capabilities = connect_generator(args, resources)
+        with Bridge(("127.0.0.1", PORT), Handler) as server:
+            server.args = args
+            server.resources = resources
+            server.instrument = instrument
+            server.capabilities = capabilities
+            if instrument is None:
                 try:
-                    while True:
-                        if server.owner and time.monotonic() >= server.deadline:
-                            server.release("browser heartbeat expired")
-                        server.handle_request()
-                except KeyboardInterrupt:
-                    pass
-                finally:
-                    if server.owner:
-                        server.release("bridge shutdown")
+                    resources.close()
+                except Exception as exc:
+                    print(f"[UPIC] VISA cleanup: {exc}", file=sys.stderr)
+            server.timeout = .1
+
+            if instrument is None:
+                print(f"[UPIC] {capabilities['reason']}", flush=True)
+                print("[UPIC] Default: Browser Audio", flush=True)
+            else:
+                print(f"[UPIC] {capabilities['identity']}", flush=True)
+                print("[UPIC] Default: Function Generator", flush=True)
+            print(f"[UPIC] Opening {ORIGIN}  (Ctrl-C to quit)", flush=True)
+            if not webbrowser.open(ORIGIN):
+                print(f"[UPIC] Open {ORIGIN} manually.", flush=True)
+
+            try:
+                while True:
+                    if server.owner and time.monotonic() >= server.deadline:
+                        server.release("browser heartbeat expired")
+                    server.handle_request()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                if server.owner:
+                    server.release("bridge shutdown")
 
 
 if __name__ == "__main__":

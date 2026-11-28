@@ -49,3 +49,46 @@ Else, we set the output low, to 0.1 hz to be inaudable, but not trigger the chan
 
 ## Bugs:
 frq drop out on shift seems to be a function of this generator. boo.
+
+## debugging:
+-> show the pyvisa commands sent  
+```trace
+$ ./bridge.py --trace
+  > :CHANnel1:OUTPut OFF
+  > :CHANnel2:OUTPut OFF
+[UPIC] UNI-T Technologies,UTG900E,AWG1225220117,3.06
+[UPIC] Default: Function Generator
+[UPIC] Opening http://127.0.0.1:8765  (Ctrl-C to quit)
+  > :CHANnel1:OUTPut OFF
+  > :CHANnel2:OUTPut OFF
+  > :CHANnel1:OUTPut ON
+  > :CHANnel2:OUTPut ON
+CH1 leave rest
+  before CH1 OUTPut=1 BASE:FREQuency=1.000000e-02 MODe=CONTinue
+  > :CHANnel1:BASE:FREQuency 176.2
+  after CH1 OUTPut=1 BASE:FREQuency=1.762000e+02 MODe=CONTinue
+CH2 leave rest
+  before CH2 OUTPut=1 BASE:FREQuency=1.000000e-02 MODe=CONTinue
+  > :CHANnel2:BASE:FREQuency 885.8
+  after CH2 OUTPut=1 BASE:FREQuency=8.858000e+02 MODe=CONTinue
+CH2 enter rest
+  before CH2 OUTPut=1 BASE:FREQuency=9.106000e+02 MODe=CONTinue
+  > :CHANnel2:BASE:FREQuency 0.01
+  after CH2 OUTPut=1 BASE:FREQuency=1.000000e-02 MODe=CONTinue
+CH2 leave rest
+  before CH2 OUTPut=1 BASE:FREQuency=1.000000e-02 MODe=CONTinue
+  > :CHANnel2:BASE:FREQuency 318.3
+  after CH2 OUTPut=1 BASE:FREQuency=3.183000e+02 MODe=CONTinue
+CH2 enter rest
+  before CH2 OUTPut=1 BASE:FREQuency=2.696000e+02 MODe=CONTinue
+  > :CHANnel2:BASE:FREQuency 0.01
+  after CH2 OUTPut=1 BASE:FREQuency=1.000000e-02 MODe=CONTinue
+CH1 enter rest
+  before CH1 OUTPut=1 BASE:FREQuency=1.140200e+03 MODe=CONTinue
+  > :CHANnel1:BASE:FREQuency 0.01
+  after CH1 OUTPut=1 BASE:FREQuency=1.000000e-02 MODe=CONTinue
+Browser requested /stop
+  > :CHANnel1:OUTPut OFF
+  > :CHANnel2:OUTPut OFF
+
+```
